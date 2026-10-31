@@ -1,0 +1,891 @@
+    /* =====================================================================
+       4. GAME 1: "CYBER INBOX INVADERS" (HIGH-OCTANE ARCADE ENGINE)
+       ===================================================================== */
+    class InboxInvadersGame {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.running = false;
+        this.score = 0;
+        this.combo = 1;
+        this.choresCompleted = 0;
+        
+        // Advanced Fighter Jet / Interceptor State
+        this.ship = {
+          x: 480,
+          y: 450,
+          width: 58,
+          height: 48,
+          speed: 8.5,
+          targetX: 480,
+          vx: 0,
+          tilt: 0,
+          thrustCycle: 0,
+          shieldActive: false,
+          shieldPulse: 0
+        };
+
+        this.lasers = [];
+        this.enemies = []; // Each enemy is an interactive Cyber Holographic Mail Drone!
+        this.particles = [];
+        this.floatingTexts = []; // Floating +100 ARCHIVED! / UNSUBSCRIBED! notifications
+        this.lastSpawn = 0;
+        this.spawnInterval = 1300; // ms
+        
+        // Visual Atmosphere Engines
+        this.stars = [];
+        this.nebulae = [];
+        this.gridOffset = 0;
+        this.screenShake = 0;
+        this.keys = {};
+
+        this.initAtmosphere();
+        this.bindEvents();
+      }
+
+      initAtmosphere() {
+        // Multi-layered Parallax Stars
+        this.stars = [];
+        for (let i = 0; i < 90; i++) {
+          this.stars.push({
+            x: Math.random() * this.canvas.width,
+            y: Math.random() * this.canvas.height,
+            speed: Math.random() * 2.8 + 0.4,
+            size: Math.random() * 2.2 + 0.8,
+            alpha: Math.random() * 0.7 + 0.3,
+            layer: Math.random() > 0.8 ? 2 : Math.random() > 0.4 ? 1 : 0
+          });
+        }
+
+        // Deep Space Nebulae Clouds
+        this.nebulae = [
+          { x: 180, y: 140, r: 240, color: 'rgba(6, 182, 212, 0.08)' },
+          { x: 740, y: 220, r: 280, color: 'rgba(168, 85, 247, 0.09)' },
+          { x: 480, y: 380, r: 220, color: 'rgba(236, 72, 153, 0.06)' }
+        ];
+      }
+
+      bindEvents() {
+        this.canvas.onmousemove = (e) => {
+          const rect = this.canvas.getBoundingClientRect();
+          const scaleX = this.canvas.width / rect.width;
+          this.ship.targetX = (e.clientX - rect.left) * scaleX;
+        };
+
+        this.canvas.onmousedown = (e) => {
+          if (!this.running) return;
+          if (e.button === 0) {
+            // Left click: Fire Dual Plasma Lasers (Archive & Delete)
+            this.fireLaser('plasma');
+          } else if (e.button === 2) {
+            // Right click: EMP Unsubscribe Wave
+            this.fireEmpWave();
+          }
+        };
+
+        this.canvas.oncontextmenu = (e) => e.preventDefault();
+
+        window.onkeydown = (e) => {
+          this.keys[e.key.toLowerCase()] = true;
+          if (!this.running) return;
+          if (e.code === 'Space') {
+            e.preventDefault();
+            this.fireLaser('plasma');
+          } else if (e.key.toLowerCase() === 'e') {
+            this.fireEmpWave();
+          } else if (e.key.toLowerCase() === 'q') {
+            this.activateTractorBeam();
+          } else if (e.key.toLowerCase() === 'z') {
+            undoLastAction();
+          }
+        };
+
+        window.onkeyup = (e) => {
+          this.keys[e.key.toLowerCase()] = false;
+        };
+      }
+
+      fireLaser(type = 'plasma') {
+        audioEngine.playPew();
+        // Dual Wingtip Plasma Cannons
+        const wingOffset = 22;
+        this.lasers.push({
+          x: this.ship.x - wingOffset,
+          y: this.ship.y - 12,
+          type: type,
+          speed: 14,
+          width: 4,
+          height: 18,
+          color: '#38bdf8'
+        });
+        this.lasers.push({
+          x: this.ship.x + wingOffset,
+          y: this.ship.y - 12,
+          type: type,
+          speed: 14,
+          width: 4,
+          height: 18,
+          color: '#38bdf8'
+        });
+
+        // Muzzle Flash Sparks
+        for (let s = -1; s <= 1; s += 2) {
+          this.particles.push({
+            x: this.ship.x + s * wingOffset,
+            y: this.ship.y - 12,
+            vx: (Math.random() - 0.5) * 2,
+            vy: -Math.random() * 3 - 2,
+            life: 0.35,
+            decay: 0.08,
+            color: '#06b6d4',
+            size: 3
+          });
+        }
+      }
+
+      fireEmpWave() {
+        audioEngine.playEmp();
+        this.screenShake = 4;
+        // Sweeping Horizontal EMP Pulse that discharges marketing newsletters
+        this.lasers.push({
+          x: this.ship.x,
+          y: this.ship.y - 10,
+          type: 'emp-wave',
+          width: 280,
+          speed: 9,
+          pulse: 0
+        });
+      }
+
+      activateTractorBeam() {
+        audioEngine.playDing();
+        this.ship.shieldActive = true;
+        this.ship.shieldPulse = 1.0;
+
+        // Catch & safeguard any VIP / Receipt mail capsules directly overhead
+        this.enemies.forEach(en => {
+          if (Math.abs(en.x - this.ship.x) < 95 && en.y > 60 && en.emailData.keep) {
+            en.alive = false;
+            this.score += 350;
+            this.choresCompleted++;
+            this.screenShake = 3;
+
+            logRealAction({
+              type: 'EMAIL_KEEP',
+              target: en.emailData.subject,
+              detail: `Tractor Beam captured & starred receipt/important message from ${en.emailData.sender}`,
+              gameSource: 'Cyber Inbox Invaders'
+            });
+
+            this.spawnDigitalShredEffect(en.x, en.y, '#f59e0b', '⭐ VIP PROTECTED & STARRED!');
+          }
+        });
+      }
+
+      spawnEnemy() {
+        const email = getNextEmailChore();
+        const categoryMeta = {
+          spam: {
+            themeColor: '#ef4444',
+            accentGlow: 'rgba(239, 68, 68, 0.45)',
+            badgeIcon: '💀',
+            badgeText: 'PROMO SPAM',
+            actionHint: 'BLAST [SPACE]'
+          },
+          newsletter: {
+            themeColor: '#a855f7',
+            accentGlow: 'rgba(168, 85, 247, 0.45)',
+            badgeIcon: '⚡',
+            badgeText: 'NEWSLETTER',
+            actionHint: 'EMP UNSUB [E]'
+          },
+          notification: {
+            themeColor: '#06b6d4',
+            accentGlow: 'rgba(6, 182, 212, 0.45)',
+            badgeIcon: '🔔',
+            badgeText: 'NOTIFICATION',
+            actionHint: 'PULSE BLAST'
+          },
+          vip: {
+            themeColor: '#f59e0b',
+            accentGlow: 'rgba(245, 158, 11, 0.45)',
+            badgeIcon: '💎',
+            badgeText: 'VIP INVOICE',
+            actionHint: 'SAVE [Q]'
+          }
+        };
+
+        const meta = categoryMeta[email.type] || categoryMeta.spam;
+
+        this.enemies.push({
+          x: Math.random() * (this.canvas.width - 240) + 120,
+          y: -60,
+          width: 176,
+          height: 54,
+          speed: Math.random() * 1.1 + 0.85,
+          color: meta.themeColor,
+          accentGlow: meta.accentGlow,
+          meta: meta,
+          emailData: email,
+          wobble: Math.random() * Math.PI * 2,
+          wobbleSpeed: Math.random() * 0.04 + 0.03,
+          alive: true,
+          hitFlash: 0
+        });
+      }
+
+      spawnDigitalShredEffect(x, y, color = '#06b6d4', floatingText = null) {
+        audioEngine.playExplosion();
+        this.screenShake = 5;
+
+        // Floating Reward / Status Text Banner
+        if (floatingText) {
+          this.floatingTexts.push({
+            x: x,
+            y: y - 10,
+            text: floatingText,
+            color: color,
+            alpha: 1.0,
+            vy: -1.6
+          });
+        }
+
+        // 1. Digital Paper Envelope Fragments (Rotating Polygons)
+        for (let i = 0; i < 12; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 4.5 + 1.5;
+          this.particles.push({
+            x: x,
+            y: y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            rot: Math.random() * Math.PI,
+            rotSpeed: (Math.random() - 0.5) * 0.25,
+            width: Math.random() * 10 + 6,
+            height: Math.random() * 6 + 4,
+            type: 'paper-shard',
+            life: 1.0,
+            decay: Math.random() * 0.025 + 0.02,
+            color: color
+          });
+        }
+
+        // 2. Binary / Cyber Data Embers ('0' and '1' glyphs floating away)
+        for (let i = 0; i < 6; i++) {
+          this.particles.push({
+            x: x + (Math.random() - 0.5) * 40,
+            y: y + (Math.random() - 0.5) * 20,
+            vx: (Math.random() - 0.5) * 1.5,
+            vy: -Math.random() * 2.5 - 1.0,
+            char: Math.random() > 0.5 ? '1' : '0',
+            type: 'binary-glyph',
+            life: 1.0,
+            decay: 0.025,
+            color: '#67e8f9'
+          });
+        }
+      }
+
+      start() {
+        this.running = true;
+        this.lastSpawn = Date.now();
+        this.loop();
+      }
+
+      stop() {
+        this.running = false;
+      }
+
+      loop() {
+        if (!this.running) return;
+        this.update();
+        this.render();
+        requestAnimationFrame(() => this.loop());
+      }
+
+      update() {
+        // Smooth Banking & Physics for the Fighter Jet
+        const dx = this.ship.targetX - this.ship.x;
+        this.ship.vx = dx * 0.16;
+        this.ship.x += this.ship.vx;
+        this.ship.x = Math.max(40, Math.min(this.canvas.width - 40, this.ship.x));
+        
+        // Banking Tilt (rolls like an actual jet into turns)
+        this.ship.tilt = Math.max(-0.35, Math.min(0.35, this.ship.vx * 0.03));
+        this.ship.thrustCycle += 0.25;
+        if (this.ship.shieldPulse > 0) this.ship.shieldPulse -= 0.04;
+
+        // Spawn Jet Exhaust Particle Sparks
+        if (Math.random() > 0.2) {
+          for (let s = -1; s <= 1; s += 2) {
+            this.particles.push({
+              x: this.ship.x + s * 14 + (Math.random() - 0.5) * 4,
+              y: this.ship.y + 20,
+              vx: (Math.random() - 0.5) * 1.2,
+              vy: Math.random() * 4 + 3,
+              life: 0.4,
+              decay: 0.06,
+              color: Math.random() > 0.5 ? '#06b6d4' : '#ec4899',
+              size: Math.random() * 3 + 1.5
+            });
+          }
+        }
+
+        // Screen Shake Decay
+        if (this.screenShake > 0.1) {
+          this.screenShake *= 0.88;
+        } else {
+          this.screenShake = 0;
+        }
+
+        // Spawn Enemies on Timer
+        const now = Date.now();
+        if (now - this.lastSpawn > this.spawnInterval) {
+          this.spawnEnemy();
+          this.lastSpawn = now;
+          this.spawnInterval = Math.max(750, this.spawnInterval - 8);
+        }
+
+        // Update Parallax Stars
+        this.stars.forEach(star => {
+          star.y += star.speed;
+          if (star.y > this.canvas.height) {
+            star.y = 0;
+            star.x = Math.random() * this.canvas.width;
+          }
+        });
+
+        // Update Perspective Warp Grid
+        this.gridOffset = (this.gridOffset + 1.8) % 36;
+
+        // Update Lasers
+        for (let i = this.lasers.length - 1; i >= 0; i--) {
+          const l = this.lasers[i];
+          l.y -= l.speed;
+          if (l.type === 'emp-wave') l.pulse += 0.1;
+          if (l.y < -30) {
+            this.lasers.splice(i, 1);
+          }
+        }
+
+        // Update Floating Text Banners
+        for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+          const ft = this.floatingTexts[i];
+          ft.y += ft.vy;
+          ft.alpha -= 0.02;
+          if (ft.alpha <= 0) {
+            this.floatingTexts.splice(i, 1);
+          }
+        }
+
+        // Update Enemies & Collision with Real Chore Dispatches
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+          const en = this.enemies[i];
+          en.y += en.speed;
+          en.wobble += en.wobbleSpeed;
+
+          // Check laser collisions
+          for (let j = this.lasers.length - 1; j >= 0; j--) {
+            const l = this.lasers[j];
+            let hit = false;
+
+            if (l.type === 'emp-wave') {
+              if (Math.abs(l.y - en.y) < 26 && Math.abs(l.x - en.x) < l.width / 2) {
+                hit = true;
+              }
+            } else {
+              if (Math.abs(l.x - en.x) < en.width / 2 && Math.abs(l.y - en.y) < en.height / 2) {
+                hit = true;
+                this.lasers.splice(j, 1);
+              }
+            }
+
+            if (hit) {
+              en.alive = false;
+
+              // EXECUTE REAL-WORLD CHORE BINDING!
+              if (en.emailData.type === 'newsletter' || l.type === 'emp-wave') {
+                this.score += 250 * this.combo;
+                this.combo = Math.min(10, this.combo + 1);
+                this.choresCompleted++;
+                this.spawnDigitalShredEffect(en.x, en.y, '#c084fc', '⚡ UNSUBSCRIBED & PURGED!');
+                logRealAction({
+                  type: 'EMAIL_UNSUB',
+                  target: en.emailData.subject,
+                  detail: `Auto-unsubscribed from ${en.emailData.sender} & purged newsletter`,
+                  gameSource: 'Cyber Inbox Invaders'
+                });
+              } else if (en.emailData.keep) {
+                // Safeguard VIP receipt even if hit
+                this.combo = 1;
+                this.spawnDigitalShredEffect(en.x, en.y, '#f59e0b', '⭐ VIP PROTECTED & STARRED!');
+                logRealAction({
+                  type: 'EMAIL_KEEP',
+                  target: en.emailData.subject,
+                  detail: `Important invoice/receipt starred and filed to keep archive`,
+                  gameSource: 'Cyber Inbox Invaders'
+                });
+              } else {
+                // Promotional / Spam Blast
+                this.score += 120 * this.combo;
+                this.combo = Math.min(10, this.combo + 1);
+                this.choresCompleted++;
+                this.spawnDigitalShredEffect(en.x, en.y, '#f87171', '💥 ARCHIVED & DELETED!');
+                logRealAction({
+                  type: 'EMAIL_DELETE',
+                  target: en.emailData.subject,
+                  detail: `Permanently deleted promotional noise from ${en.emailData.sender}`,
+                  gameSource: 'Cyber Inbox Invaders'
+                });
+              }
+              break;
+            }
+          }
+
+          if (en.y > this.canvas.height + 60 || !en.alive) {
+            this.enemies.splice(i, 1);
+          }
+        }
+
+        // Update Particles
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          const p = this.particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          if (p.rot !== undefined) p.rot += p.rotSpeed;
+          p.life -= p.decay;
+          if (p.life <= 0) {
+            this.particles.splice(i, 1);
+          }
+        }
+
+        // Update in-game HUD indicators
+        const elScore = document.getElementById('game-score');
+        const elCombo = document.getElementById('game-combo');
+        const elCount = document.getElementById('game-chores-count');
+        if (elScore) elScore.innerText = this.score;
+        if (elCombo) elCombo.innerText = `${this.combo}x`;
+        if (elCount) elCount.innerText = this.choresCompleted;
+      }
+
+      render() {
+        this.ctx.save();
+        
+        // Screen Shake Transform
+        if (this.screenShake > 0) {
+          const shakeX = (Math.random() - 0.5) * this.screenShake * 3;
+          const shakeY = (Math.random() - 0.5) * this.screenShake * 3;
+          this.ctx.translate(shakeX, shakeY);
+        }
+
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // 1. Deep Space Cosmic Void & Nebula Background
+        const bgGrad = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+        bgGrad.addColorStop(0, '#040711');
+        bgGrad.addColorStop(0.5, '#070d1d');
+        bgGrad.addColorStop(1, '#0c1224');
+        this.ctx.fillStyle = bgGrad;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Draw Ambient Nebulae
+        this.nebulae.forEach(neb => {
+          const g = this.ctx.createRadialGradient(neb.x, neb.y, 10, neb.x, neb.y, neb.r);
+          g.addColorStop(0, neb.color);
+          g.addColorStop(1, 'transparent');
+          this.ctx.fillStyle = g;
+          this.ctx.beginPath();
+          this.ctx.arc(neb.x, neb.y, neb.r, 0, Math.PI * 2);
+          this.ctx.fill();
+        });
+
+        // Draw Parallax Starfield with Cross-Glow Stars
+        this.stars.forEach(s => {
+          this.ctx.fillStyle = s.layer === 2 ? '#67e8f9' : '#ffffff';
+          this.ctx.globalAlpha = s.alpha;
+          if (s.layer === 2) {
+            // Speed streaks for closer stars
+            this.ctx.fillRect(s.x, s.y, s.size, s.size * 4);
+          } else {
+            this.ctx.fillRect(s.x, s.y, s.size, s.size);
+          }
+        });
+        this.ctx.globalAlpha = 1;
+
+        // Draw Perspective Warp Grid on the Bottom Horizon
+        this.renderPerspectiveGrid();
+
+        // 2. Render Lasers & EMP Shockwaves
+        this.renderLasers();
+
+        // 3. Render Cyber Holographic Mail Drones (The Upgraded Emails!)
+        this.enemies.forEach(en => {
+          this.renderMailDrone(en);
+        });
+
+        // 4. Render Digital Shredding Particles & Debris
+        this.renderParticles();
+
+        // 5. Render Upgraded Cyberpunk Interceptor Jet
+        this.renderPlayerJet();
+
+        // 6. Render Floating Combat Banners (+100 ARCHIVED!)
+        this.renderFloatingTexts();
+
+        this.ctx.restore();
+      }
+
+      renderPerspectiveGrid() {
+        const horizonY = this.canvas.height * 0.72;
+        this.ctx.save();
+        this.ctx.strokeStyle = 'rgba(6, 182, 212, 0.15)';
+        this.ctx.lineWidth = 1;
+
+        // Converging perspective lines to horizon center
+        const centerX = this.canvas.width / 2;
+        for (let x = -200; x <= this.canvas.width + 200; x += 65) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(centerX, horizonY);
+          this.ctx.lineTo(x, this.canvas.height);
+          this.ctx.stroke();
+        }
+
+        // Horizontal depth lines scrolling downward
+        for (let y = horizonY + (this.gridOffset % 18); y < this.canvas.height; y += 18) {
+          const depthAlpha = (y - horizonY) / (this.canvas.height - horizonY);
+          this.ctx.strokeStyle = `rgba(6, 182, 212, ${depthAlpha * 0.22})`;
+          this.ctx.beginPath();
+          this.ctx.moveTo(0, y);
+          this.ctx.lineTo(this.canvas.width, y);
+          this.ctx.stroke();
+        }
+        this.ctx.restore();
+      }
+
+      renderPlayerJet() {
+        const ctx = this.ctx;
+        const s = this.ship;
+
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.tilt); // Dynamic 3D banking roll!
+
+        // A. Dual Plasma Afterburner Thrusters
+        const thrusterLength = 22 + Math.sin(s.thrustCycle) * 7 + Math.random() * 4;
+        for (let side = -1; side <= 1; side += 2) {
+          const tx = side * 14;
+          const ty = 18;
+
+          // Outer Plasma Plume
+          const plumeGrad = ctx.createLinearGradient(tx, ty, tx, ty + thrusterLength);
+          plumeGrad.addColorStop(0, '#ffffff');
+          plumeGrad.addColorStop(0.25, '#38bdf8');
+          plumeGrad.addColorStop(0.7, '#06b6d4');
+          plumeGrad.addColorStop(1, 'transparent');
+
+          ctx.fillStyle = plumeGrad;
+          ctx.beginPath();
+          ctx.moveTo(tx - 6, ty);
+          ctx.lineTo(tx + 6, ty);
+          ctx.lineTo(tx, ty + thrusterLength);
+          ctx.closePath();
+          ctx.fill();
+
+          // Titanium Nozzle Ring
+          ctx.fillStyle = '#334155';
+          ctx.strokeStyle = '#06b6d4';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(tx - 6, ty - 2, 12, 4);
+          ctx.fillRect(tx - 6, ty - 2, 12, 4);
+        }
+
+        // B. Forward Swept Delta Wings (Dark Gunmetal Alloy with Shading)
+        ctx.shadowColor = '#06b6d4';
+        ctx.shadowBlur = 12;
+
+        const wingGrad = ctx.createLinearGradient(0, -28, 0, 24);
+        wingGrad.addColorStop(0, '#334155');
+        wingGrad.addColorStop(0.5, '#1e293b');
+        wingGrad.addColorStop(1, '#090d16');
+
+        ctx.fillStyle = wingGrad;
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+
+        ctx.beginPath();
+        // Nose tip
+        ctx.moveTo(0, -28);
+        // Right wing upper leading edge
+        ctx.lineTo(12, -8);
+        ctx.lineTo(32, 10);
+        // Right wingtip missile rail
+        ctx.lineTo(34, 16);
+        ctx.lineTo(26, 18);
+        // Right wing trailing edge & engine mount
+        ctx.lineTo(20, 14);
+        ctx.lineTo(8, 20);
+        // Aft fuselage notch
+        ctx.lineTo(0, 16);
+        // Left wing mount
+        ctx.lineTo(-8, 20);
+        ctx.lineTo(-20, 14);
+        // Left wingtip
+        ctx.lineTo(-26, 18);
+        ctx.lineTo(-34, 16);
+        // Left wing leading edge
+        ctx.lineTo(-32, 10);
+        ctx.lineTo(-12, -8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // C. Wing Plasma Cannons (Mounted on Under-Wing Hardpoints)
+        for (let side = -1; side <= 1; side += 2) {
+          const cx = side * 22;
+          ctx.fillStyle = '#64748b';
+          ctx.fillRect(cx - 2, 2, 4, 14);
+          // Glowing Muzzle Tip
+          ctx.fillStyle = '#38bdf8';
+          ctx.fillRect(cx - 2.5, 0, 5, 3);
+        }
+
+        // D. Fuselage Armor Panels & Ergonomic Spine
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.moveTo(0, -26);
+        ctx.lineTo(8, 4);
+        ctx.lineTo(0, 14);
+        ctx.lineTo(-8, 4);
+        ctx.closePath();
+        ctx.fill();
+
+        // Neon Accent Trim Lines along Wings
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(10, -4);
+        ctx.lineTo(26, 8);
+        ctx.moveTo(-10, -4);
+        ctx.lineTo(-26, 8);
+        ctx.stroke();
+
+        // E. Iridescent Cockpit Canopy (Cyberpunk Visor)
+        const visorGrad = ctx.createRadialGradient(-2, -12, 1, 0, -8, 12);
+        visorGrad.addColorStop(0, '#67e8f9');
+        visorGrad.addColorStop(0.4, '#06b6d4');
+        visorGrad.addColorStop(0.9, '#083344');
+
+        ctx.fillStyle = visorGrad;
+        ctx.beginPath();
+        ctx.ellipse(0, -9, 5.5, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Canopy Glint / Specular Flare
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(-1.5, -14, 1.8, 4, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Wingtip Navigation LEDs (Red port, Green starboard)
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(-34, 14, 3, 3);
+        ctx.fillStyle = '#10b981';
+        ctx.fillRect(31, 14, 3, 3);
+
+        // F. Translucent Energy Shield / Tractor Bubble
+        if (s.shieldPulse > 0 || this.combo >= 4) {
+          ctx.save();
+          const shieldAlpha = Math.max(0.15, s.shieldPulse * 0.7);
+          ctx.strokeStyle = `rgba(6, 182, 212, ${shieldAlpha})`;
+          ctx.fillStyle = `rgba(6, 182, 212, ${shieldAlpha * 0.12})`;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          ctx.arc(0, -4, 42, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }
+
+      renderMailDrone(en) {
+        const ctx = this.ctx;
+        // Smooth Floating Bobbing Motion
+        const floatY = en.y + Math.sin(en.wobble) * 3.5;
+
+        ctx.save();
+        ctx.translate(en.x, floatY);
+
+        const w = en.width;
+        const h = en.height;
+        const hw = w / 2;
+        const hh = h / 2;
+
+        // A. Anti-Grav Repulsor Hover Pads on Outer Left & Right
+        for (let side = -1; side <= 1; side += 2) {
+          const px = side * (hw + 5);
+          // Micro Thruster Housing
+          ctx.fillStyle = '#1e293b';
+          ctx.strokeStyle = en.color;
+          ctx.lineWidth = 1.2;
+          ctx.strokeRect(px - 4, -8, 8, 16);
+          ctx.fillRect(px - 4, -8, 8, 16);
+
+          // Downward Repulsor Energy Ring
+          ctx.fillStyle = en.color;
+          ctx.beginPath();
+          ctx.ellipse(px, 11, 4, 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // B. Cyber Envelope Capsule Body (Chamfered Hexagonal Frame)
+        ctx.shadowColor = en.color;
+        ctx.shadowBlur = 10;
+
+        // Translucent Dark Glass Background with Top Gradient
+        const cardGrad = ctx.createLinearGradient(0, -hh, 0, hh);
+        cardGrad.addColorStop(0, '#10192e');
+        cardGrad.addColorStop(1, '#080d19');
+        ctx.fillStyle = cardGrad;
+        ctx.strokeStyle = en.color;
+        ctx.lineWidth = 1.8;
+
+        ctx.beginPath();
+        // Chamfered / Rounded envelope corners
+        ctx.roundRect(-hw, -hh, w, h, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // C. Envelope Geometric Laser Flap Lines (<V> Fold)
+        ctx.strokeStyle = `rgba(255, 255, 255, 0.22)`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(-hw + 8, -hh + 3);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(hw - 8, -hh + 3);
+        ctx.stroke();
+
+        // D. Top Status Header Ribbon
+        // Category Badge Pill
+        ctx.fillStyle = en.color;
+        ctx.beginPath();
+        ctx.roundRect(-hw + 8, -hh + 5, 88, 14, 3);
+        ctx.fill();
+
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 9px "Press Start 2P", monospace';
+        ctx.fillText(en.meta.badgeText, -hw + 12, -hh + 15);
+
+        // Right-aligned Action Trigger Shortcut
+        ctx.fillStyle = en.color;
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(en.meta.actionHint, hw - 8, -hh + 15);
+        ctx.textAlign = 'left';
+
+        // E. Crisp Email Subject Text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px -apple-system, sans-serif';
+        let subj = en.emailData.subject;
+        if (subj.length > 22) subj = subj.substring(0, 20) + '..';
+        ctx.fillText(subj, -hw + 10, 6);
+
+        // F. Sender Domain & Unread Tag
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px monospace';
+        let sender = en.emailData.sender;
+        if (sender.length > 24) sender = sender.substring(0, 22) + '..';
+        ctx.fillText(sender, -hw + 10, 20);
+
+        ctx.restore();
+      }
+
+      renderLasers() {
+        const ctx = this.ctx;
+        this.lasers.forEach(l => {
+          if (l.type === 'emp-wave') {
+            ctx.save();
+            ctx.shadowColor = '#c084fc';
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = 'rgba(168, 85, 247, 0.3)';
+            ctx.strokeStyle = '#e9d5ff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.ellipse(l.x, l.y, l.width / 2, 10, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Electric Arcs along the EMP wave
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            for (let a = -l.width / 2; a <= l.width / 2; a += 35) {
+              const arcY = l.y + (Math.sin(a * 0.1 + l.pulse) * 8);
+              ctx.lineTo(l.x + a, arcY);
+            }
+            ctx.stroke();
+            ctx.restore();
+          } else {
+            // High-Energy Cyan Plasma Bolts with Bloom
+            ctx.save();
+            ctx.shadowColor = '#06b6d4';
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = '#e0f2fe';
+            ctx.fillRect(l.x - 2, l.y - 12, 4, 16);
+
+            // Outer Corona
+            ctx.fillStyle = '#06b6d4';
+            ctx.fillRect(l.x - 3.5, l.y - 8, 7, 10);
+            ctx.restore();
+          }
+        });
+      }
+
+      renderParticles() {
+        const ctx = this.ctx;
+        this.particles.forEach(p => {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, p.life);
+
+          if (p.type === 'paper-shard') {
+            // Rotating Hologram Paper Fragment
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.width / 2, -p.height / 2, p.width, p.height);
+          } else if (p.type === 'binary-glyph') {
+            // Floating 0 / 1 Glyph
+            ctx.fillStyle = p.color;
+            ctx.font = 'bold 11px monospace';
+            ctx.fillText(p.char, p.x, p.y);
+          } else {
+            // Spark Dot
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size || 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.restore();
+        });
+      }
+
+      renderFloatingTexts() {
+        const ctx = this.ctx;
+        this.floatingTexts.forEach(ft => {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, ft.alpha);
+          ctx.shadowColor = ft.color;
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = ft.color;
+          ctx.font = 'bold 12px "Press Start 2P", monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(ft.text, ft.x, ft.y);
+          ctx.restore();
+        });
+      }
+    }
